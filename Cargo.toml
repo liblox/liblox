@@ -1,0 +1,12 @@
+[package]
+name = "liblox"
+version = "0.1.0"
+edition = "2024"
+default-run = "liblox"
+
+[dependencies]
+const_format = "0.2.36"
+glam = "0.33.3"
+image = "0.25.10"
+rand = "0.10.2"
+sdl3 = "0.18.4"

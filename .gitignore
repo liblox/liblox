@@ -1,3 +1,4 @@
 /target
 /src/bin/xfrcat.rs
 /src/bin
+*.spv

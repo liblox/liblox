@@ -1,8 +1,10 @@
 use const_format::formatcp;
-use glam::{Mat4, Quat, Vec2, Vec3};
-use liblox::three_d::objects::{Cube3D, Object3D, Renderer, Vertex};
+use glam::{Quat, Vec2, Vec3, Vec3Swizzles};
+use liblox::three_d::objects::mesh::{Cube3D, Object3D, Plane3D, Vertex};
+use liblox::three_d::objects::render::{Renderer};
+use rand::random_range;
 use sdl3::{
-    event::Event, gpu::{BufferBinding, BufferUsageFlags, ColorTargetDescription, ColorTargetInfo, CullMode, Device, Fence, FillMode, FrontFace, GraphicsPipelineTargetInfo, IndexElementSize, LoadOp, PrimitiveType, RasterizerState, ShaderFormat, ShaderStage, StoreOp, VertexAttribute, VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState}, keyboard::Keycode, messagebox::{self, ButtonData, MessageBoxButtonFlag, MessageBoxFlag}, pixels::Color, sys::gpu::SDL_GPUShaderFormat
+    event::Event, gpu::{BufferBinding, BufferUsageFlags, ColorTargetDescription, ColorTargetInfo, CompareOp, CullMode, DepthStencilState, DepthStencilTargetInfo, Device, Fence, FillMode, FrontFace, GraphicsPipelineTargetInfo, IndexElementSize, LoadOp, PrimitiveType, RasterizerState, SampleCount, ShaderFormat, ShaderStage, StoreOp, TextureCreateInfo, TextureFormat, TextureType, TextureUsage, VertexAttribute, VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState}, keyboard::Keycode, messagebox::{self, ButtonData, MessageBoxButtonFlag, MessageBoxFlag}, pixels::Color, sys::gpu::SDL_GPUShaderFormat
 };
 
 const RO_TOO_BIG: &str = "Rendered objects' size exceeded 4GiB";
@@ -62,6 +64,9 @@ const TOO_MANY_OBJ: &str = const_format::formatcp!("You have {} or more objects 
 ", USIZEMAX_CONST_FMT);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    // region Boilerplate
+
     std::panic::set_hook(Box::new(|info| {
         let _ = messagebox::show_message_box(MessageBoxFlag::ERROR, 
         &[ButtonData {
@@ -72,10 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ()
     }));
 
-    // let mut objlist: Vec<Box<dyn Object3D>> = vec![Box::new(Cube3D::new(Vec3::new(rand::random_range(-10.0..10.0), rand::random_range(-5.0..5.0), rand::random_range(0.0..10.0)), 0.5))];
-    let objlist: Vec<Box<dyn Object3D>> = vec![Box::new(Cube3D::new(Vec3::new(0.0, 0.0, -5.0), 1.0, /* Some(Quat::from_euler(glam::EulerRot::XYZ, 0f32.to_radians(), -45f32.to_radians(), 45f32.to_radians())) */ None))];
-
-    // sdl boilerplate and ee tee cee
     let sdl_ctx = sdl3::init().unwrap();
     let video_subsys = sdl_ctx.video().unwrap();
     let win = video_subsys
@@ -88,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut renderer = Renderer::new(
          Device::new(
-         // SPIRV, DXIL, DXBC, METALLIB
+            // SPIRV, DXIL, DXBC, METALLIB
             // but less boilerplate
             ShaderFormat(SDL_GPUShaderFormat(46u32)),
             true // TODO: change to false
@@ -116,12 +117,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .with_entrypoint(c"main")
         .build()?;
-
-    let mut fov: f32 = 90.0;
-
-    let mut proj_mat = glam::camera::lh::proj::opengl::perspective(fov.to_radians(), 16.0/9.0, 0.01, 1000.0);
-
-    let mut view_mat = glam::camera::lh::view::look_at_mat4(Vec3::ZERO, Vec3::NEG_Z, Vec3::Y);
 
     let swc_format = renderer.gpu().get_swapchain_texture_format(&win);
     let pipeline = renderer.gpu()
@@ -159,27 +154,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_rasterizer_state(
             RasterizerState::new()
                 .with_fill_mode(FillMode::Fill)
-                .with_cull_mode(CullMode::None) // TODO: make sure fire vertex orders and change to back
+                .with_cull_mode(CullMode::None) // TODO: make sure indices are good and change to back
                 .with_front_face(FrontFace::CounterClockwise)
         )
-        // .with_depth_stencil_state(
-        //     DepthStencilState::new()
-        //         .with_enable_depth_test(false)
-        //         .with_enable_depth_write(false)
-        //         .with_compare_op(CompareOp::Less)   
-        // )
+        .with_depth_stencil_state(
+            DepthStencilState::new()
+                .with_enable_depth_test(true)
+                .with_enable_depth_write(true)
+                .with_compare_op(CompareOp::Less)   
+        )
         .with_target_info(
             GraphicsPipelineTargetInfo::new()
                 .with_color_target_descriptions(&[
                     ColorTargetDescription::new()
                         .with_format(swc_format)  
                 ])   
-                // .with_has_depth_stencil_target(true)
-                // .with_depth_stencil_format(TextureFormat::D16Unorm)
+                .with_has_depth_stencil_target(true)
+                .with_depth_stencil_format(TextureFormat::D16Unorm)
         ).build().unwrap();
 
     drop(vert_shader);
     drop(frag_shader);
+
+    // endregion
+
+    let mut objlist: Vec<Box<dyn Object3D>> = vec![
+        Box::new(Cube3D::new(
+            Vec3::new(random_range(1.0..=5.0), random_range(1.0..=3.0), random_range(3.0..=5.0)),
+            Vec3::new(random_range(0.5..=2.0), random_range(0.5..=2.0), random_range(0.5..=2.0)),
+            Some(Quat::from_euler(
+                glam::EulerRot::XYZ,
+                random_range(0.0..std::f32::consts::TAU),
+                random_range(0.0..std::f32::consts::TAU),
+                random_range(0.0..std::f32::consts::TAU),
+            ))
+        )),
+        Box::new(Plane3D::new(Vec3::NEG_Y, Vec3::new(10.0, 1.0, 10.0), None))
+    ];
+
+    let mut fov: f32 = 90.0;
+
+    let mut proj_mat = glam::camera::lh::proj::directx::perspective(fov.to_radians(), 16.0/9.0, 0.01, 10.0);
+
+    let mut view_mat = glam::camera::lh::view::look_at_mat4(Vec3::ZERO, Vec3::Z, Vec3::Y);
 
     let cp_commands = renderer.gpu().acquire_command_buffer()?;
     let cpass = renderer.gpu().begin_copy_pass(&cp_commands)?;
@@ -188,29 +205,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut all_indices: Vec<u32> = vec![];
     let mut all_srt: Vec<f32> = vec![];
 
-    // vertex offset, indices offset, others (mat4s) offset
+    // vertex offset, indices offset
     // calculated using the next item in a peekable iterator's offset
     // or from end to start
-    let mut offset_map: Vec<(u32, u32, usize)> = vec![];
+    let mut offset_map: Vec<(usize, usize)> = vec![];
 
-    for o in objlist {
+    // same as offset_map but for srts
+    let mut srt_offset_map: Vec<usize> = vec![];
+
+    for o in &objlist {
+        offset_map.push((
+            all_vertices.len() / (size_of::<Vertex>() / size_of::<f32>()),
+            all_indices.len(),
+        ));
+        srt_offset_map.push(all_srt.len());
         all_vertices.extend(o.vertices().iter().flat_map(|v|v.to_slice()));
         all_indices.extend(o.indices().iter().map(|i|*i as u32));
         all_srt.extend(o.srt_matrix().to_cols_array());
-        let srt = o.srt_matrix();
-        println!("{srt:?}");
-        if let Some(le) = offset_map.last() {
-            offset_map.push((
-                u32::try_from(o.vertices().len()).expect(RO_TOO_BIG).checked_add(le.0).expect(RO_TOO_BIG),
-                u32::try_from(o.indices().len()).expect(RO_TOO_BIG).checked_add(le.1).expect(RO_TOO_BIG),
-                all_srt.len() /*.expect(TOO_MANY_OBJ)*/
-            ));
-        } else {
-            offset_map.push((0, 0, 0));
-        }
     }
 
     println!("{all_srt:?}");
+    println!("{all_indices:?}");
+    println!("{all_vertices:?}");
+    println!("{offset_map:?}");
 
     renderer.resize_or_create_txbuf((size_of_val(all_vertices.as_slice()).checked_add(size_of_val(all_indices.as_slice())).expect(RO_TOO_BIG)).try_into()?)?;
 
@@ -220,17 +237,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     renderer.gpu().end_copy_pass(cpass);
     let cpfence = cp_commands.submit_and_acquire_fence(renderer.gpu())?;
 
-    // let mut depth_tex = renderer.gpu().create_texture(
-    //     TextureCreateInfo::new()
-    //         .with_type(TextureType::_2D)
-    //         .with_width(1920)
-    //         .with_height(1080)
-    //         .with_layer_count_or_depth(1)
-    //         .with_num_levels(1)
-    //         .with_format(TextureFormat::D16Unorm)
-    //         .with_sample_count(SampleCount::NoMultiSampling)
-    //         .with_usage(TextureUsage::SAMPLER | TextureUsage::DEPTH_STENCIL_TARGET)
-    // )?;
+    let mut depth_tex = renderer.gpu().create_texture(
+        TextureCreateInfo::new()
+            .with_type(TextureType::_2D)
+            .with_width(1920)
+            .with_height(1080)
+            .with_layer_count_or_depth(1)
+            .with_num_levels(1)
+            .with_format(TextureFormat::D16Unorm)
+            .with_sample_count(SampleCount::NoMultiSampling)
+            .with_usage(TextureUsage::SAMPLER | TextureUsage::DEPTH_STENCIL_TARGET)
+    )?;
 
     println!("vertices: {}", all_vertices.len() / 8);
     println!("vertex buffer bytes: {}", vert_buf.len());
@@ -245,7 +262,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape | Keycode::Q), .. } => {
                     break 'rl
                 },
-
+                Event::KeyDown { keycode: Some(Keycode::R), repeat: false, .. } => {
+                    objlist[0] = Box::new(Cube3D::new(
+                        Vec3::new(random_range(-5.0..=5.0), random_range(-3.0..=3.0), random_range(3.0..=5.0)),
+                        Vec3::new(random_range(f32::EPSILON..=5.0), random_range(f32::EPSILON..=3.0), random_range(f32::EPSILON..=5.0)),
+                        Some(Quat::from_euler(
+                            glam::EulerRot::XYZ,
+                            random_range(0.0..std::f32::consts::TAU),
+                            random_range(0.0..std::f32::consts::TAU),
+                            random_range(0.0..std::f32::consts::TAU),
+                        ))
+                    ))
+                }
                 _ => {}
             }
         }
@@ -259,16 +287,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .with_load_op(LoadOp::CLEAR)
                     .with_store_op(StoreOp::STORE)
             ];
-            // let depth_tgt = DepthStencilTargetInfo::new()
-            //     .with_texture(&mut depth_tex)
-            //     .with_cycle(true)
-            //     .with_clear_depth(1.0f32)
-            //     .with_clear_stencil(0)
-            //     .with_load_op(LoadOp::CLEAR)
-            //     .with_store_op(StoreOp::STORE)
-            //     .with_stencil_load_op(LoadOp::CLEAR)
-            //     .with_stencil_store_op(StoreOp::STORE);
-            let rpass = renderer.gpu().begin_render_pass(&cbuf, &col_tgts, /*Some(&depth_tgt)*/ None)?;
+            let depth_tgt = DepthStencilTargetInfo::new()
+                .with_texture(&mut depth_tex)
+                .with_cycle(true)
+                .with_clear_depth(1.0f32)
+                .with_clear_stencil(0)
+                .with_load_op(LoadOp::CLEAR)
+                .with_store_op(StoreOp::STORE)
+                .with_stencil_load_op(LoadOp::CLEAR)
+                .with_stencil_store_op(StoreOp::STORE);
+
+            all_srt.clear();
+            srt_offset_map.clear();
+            for o in &objlist {
+                srt_offset_map.push(all_srt.len());
+                all_srt.extend(o.srt_matrix().to_cols_array());
+            }
+
+            // println!("{srt_offset_map:?}");
+            // println!("{all_srt:?}");
+
+            let rpass = renderer.gpu().begin_render_pass(&cbuf, &col_tgts, Some(&depth_tgt))?;
 
             rpass.bind_graphics_pipeline(&pipeline);
 
@@ -282,33 +321,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rd.extend_from_slice(&proj_mat.to_cols_array());
             rd.extend_from_slice(&view_mat.to_cols_array());
 
-            let tpr: [f32; 32] = rd.as_slice().try_into().unwrap(); // this NEEDS to stay like this. the temp value is necessary for this and I couldn't evne tell you if you put a 50 BMG to my head
-
-            cbuf.push_vertex_uniform_data(0, &tpr);
+            cbuf.push_vertex_uniform_data(0, &<[f32; 32]>::try_from(rd.as_slice()).unwrap());
 
             drop(rd);
 
             let mut offsets_iter = offset_map.iter().peekable();
-            while let Some(&(vo, io, oo)) = offsets_iter.next() {
-                let mut data: Vec<f32> = vec![];
-                data.extend_from_slice(&all_srt[oo..oo+16]);
-                println!("{}..{}", oo, oo+16);
-                println!("{:?}", data);
-                println!("data {} {}, all srt {} {}", size_of_val(data.as_slice()), data.len(), size_of_val(all_srt.as_slice()), all_srt.len());
-                let tp: [f32; 16] = data.as_slice().try_into().unwrap();
-                cbuf.push_vertex_uniform_data(1, &tp);
-                drop(data);
-                // println!("ni: {}\nio: {}\nvo: {}", offsets_iter.peek().copied().map(|p|p.1).unwrap_or(all_indices.len() as u32), io, vo);
-                rpass.draw_indexed_primitives(offsets_iter.peek().copied().map(|p|p.1).unwrap_or(all_indices.len() as u32) - io, 1, io, vo as i32, 0);
+            let mut srt_offsets_iter = srt_offset_map.iter();
+            while let Some(&(vo, io)) = offsets_iter.next() {
+                let oo = *srt_offsets_iter.next().unwrap();
+                cbuf.push_vertex_uniform_data(1, &<[f32; 16]>::try_from(&all_srt[oo..oo+16]).unwrap());
+                rpass.draw_indexed_primitives((offsets_iter.peek().copied().map(|p|p.1).unwrap_or(all_indices.len()) - io) as u32, 1, io as u32, vo as i32, 0);
             }
-
-            // rpass.draw_indexed_primitives(
-            //     all_indices.len() as u32,
-            //     1,
-            //     0,
-            // 0,
-            //     0,
-            // );
 
             renderer.gpu().end_render_pass(rpass);
             wf = Some(cbuf.submit_and_acquire_fence(renderer.gpu())?);

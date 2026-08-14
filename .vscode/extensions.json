@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "rust-lang.rust-analyzer",
+        "HB24.simple-region-marker",
+        "mantasu.outline-sections"
+    ]
+}
